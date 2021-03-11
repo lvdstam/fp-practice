@@ -40,11 +40,25 @@ case object MyNil extends MyList[Nothing]
 case class MyCons[A](head: A, tail: MyList[A]) extends MyList[A]
 
 trait MyFunctor[F[_]] {
+  self =>
   def map[A, B](fa: F[A], f: A => B): F[B]
 
   def as[A, B](fa: F[A], b: B): F[B] = map(fa, (_: A) => b)
   def lift[A, B](f: A => B): F[A] => F[B] = map(_, f)
-  def compose[G[_]](g: MyFunctor[G]): MyFunctor[F[G]] = ???
+
+  def compose[G[_]](g: MyFunctor[G]) = {
+    type FG[A] = F[G[A]]
+    new MyFunctor[FG] {
+      override def map[A, B](fga: FG[A], f: A => B): FG[B] = self.map(fga, g.lift(f))
+    }
+  }
+
+  def rev_compose[G[_]](g: MyFunctor[G]) = {
+    type GF[A] = G[F[A]]
+    new MyFunctor[GF] {
+      override def map[A, B](gfa: GF[A], f: A => B): GF[B] = g.map(gfa, self.lift(f))
+    }
+  }
 }
 
 
@@ -76,9 +90,10 @@ val myListFunctor = new MyFunctor[MyList] {
     case MyNil => MyNil
   }
 }
-
 val myListValue = MyCons(2, MyCons(1, MyNil))
+myListFunctor.map(myListValue, (a: Int) => a + 1)
 myListFunctor.as(myListValue, 100)
 
-val r: Option[List[Int]] = Some(List(1, 2, 3))
-r.map(_.map(_ + 1))
+val composed = myListFunctor.compose(myMaybeFunctor)
+val value: MyList[MyMaybe[Int]] = MyCons(MySome(10), MyNil)
+composed.map(value, (a: Int) => a + 1)

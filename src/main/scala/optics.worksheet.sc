@@ -212,3 +212,4 @@ G[F[_]]: Monad?
 3. Use optics to decouple code (a method evaluates the cost of electricity given something that can give the degrees in Fahrenheit);
 4. Replace extending Sensor without using inheritance.
  */
+
