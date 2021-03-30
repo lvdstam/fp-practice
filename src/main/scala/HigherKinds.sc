@@ -56,12 +56,68 @@ trait MyFunctor[F[_]] {
     }
 }
 
-trait MyMonad[F[_]] extends MyFunctor[F] {
+trait MyMonad[F[_]] {
+  self =>
   def point[A](a: A): F[A]
   def flatMap[A, B](fa: F[A], f: A => F[B]): F[B]
 
-  def map[A, B](fa: F[A], f: A => B): F[B] = flatMap(fa, (a: A) => point(f(a)))
+  def asFunctor: MyFunctor[F] = new MyFunctor[F] {
+    def map[A, B](fa: F[A], f: A => B): F[B] = flatMap(fa, (a: A) => point(f(a)))
+  }
 }
+
+object ListTransformer {
+  def compose[F[_]](fMonad: MyMonad[F]): MyMonad[({type FG[A] = F[List[A]]})#FG] =
+    new MyMonad[({type FG[A] = F[List[A]]})#FG] {
+      def point[A](a: A): F[List[A]] = fMonad.point(List(a))
+
+      def flatMap[A, B](fa: F[List[A]], f: A => F[List[B]]): F[List[B]] = {
+        fMonad.flatMap[List[A], List[B]](fa, {
+          case Nil => fMonad.point(Nil)
+          case a :: as =>
+            val head: F[List[B]] = f(a)
+            val rest: F[List[B]] = flatMap(fMonad.point(as), f)
+            fMonad.flatMap(head, (b: List[B]) => fMonad.flatMap(rest, (bs: List[B]) => fMonad.point(b ::: bs)))
+        })
+      }
+    }
+}
+
+object OptionTransformer {
+  def compose[F[_]](mf: MyMonad[F]): MyMonad[({type FG[A] = F[Option[A]]})#FG] =
+    new MyMonad[({type FG[A] = F[Option[A]]})#FG] {
+    override def point[A](a: A): F[Option[A]] = mf.point(Some(a))
+
+    override def flatMap[A, B](fa: F[Option[A]], f: A => F[Option[B]]): F[Option[B]] = {
+      mf.flatMap[Option[A], Option[B]](fa, {
+        case None => mf.point(None)
+        case Some(a) => f(a)
+      })
+    }
+  }
+}
+
+// Can it be done?
+//object Option2Transformer {
+//  def compose[F[_]](mf: MyMonad[F]): MyMonad[({type GF[A] = Option[F[A]]})#GF] =
+//    new MyMonad[({type GF[A] = Option[F[A]]})#GF] {
+//      override def point[A](a: A): Option[F[A]] = Some(mf.point(a))
+//
+//      override def flatMap[A, B](fa: Option[F[A]], f: A => Option[F[B]]): Option[F[B]] = {
+//        fa match {
+//          case None => None
+//          case Some(mfa) => mf.flatMap(mfa, f)
+//        }
+//      }
+//    }
+//}
+
+//trait MyMonad[F[_]] extends MyFunctor[F] {
+//  def point[A](a: A): F[A]
+//  def flatMap[A, B](fa: F[A], f: A => F[B]): F[B]
+//
+//  def map[A, B](fa: F[A], f: A => B): F[B] = flatMap(fa, (a: A) => point(f(a)))
+//}
 
 val myMaybeMonad: MyMonad[MyMaybe] = new MyMonad[MyMaybe] {
   override def point[A](a: A): MyMaybe[A] = MySome(a)
@@ -83,7 +139,7 @@ val listFunctor: ListFunctor = new MyFunctor[List] {
   }
 }
 
-val myMaybeFunctor: MyFunctor[MyMaybe] = myMaybeMonad
+val myMaybeFunctor: MyFunctor[MyMaybe] = myMaybeMonad.asFunctor
 //val myMaybeFunctor: MyFunctor[MyMaybe] = new MyFunctor[MyMaybe] {
 //  override def map[A, B](fa: MyMaybe[A], f: A => B) = fa match {
 //    case MyNone => MyNone
